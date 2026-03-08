@@ -1,0 +1,14 @@
+{
+  "projects": {
+    "default": "taoyuan-dd167"
+  },
+  "targets": {
+    "taoyuan-dd167": {
+      "hosting": {
+        "taoyuan-presale": [
+          "taoyuan-presale"
+        ]
+      }
+    }
+  }
+}
