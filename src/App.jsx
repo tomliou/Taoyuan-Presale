@@ -3,6 +3,40 @@ import { db } from './firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import './App.css';
 
+/** 將後端欄位轉成前端可顯示的型別（Firestore Timestamp → 字串等） */
+function normalizeDocData(raw) {
+  const toStr = (v) => {
+    if (v == null) return '';
+    if (typeof v === 'string') return v;
+    if (typeof v === 'number') return String(v);
+    if (typeof v === 'object' && v !== null && 'seconds' in v && 'nanoseconds' in v) {
+      const date = new Date(v.seconds * 1000 + v.nanoseconds / 1e6);
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+    return String(v);
+  };
+  const toNum = (v) => {
+    if (v == null || v === '') return undefined;
+    if (typeof v === 'number' && !Number.isNaN(v)) return v;
+    if (typeof v === 'string') return Number(v);
+    return undefined;
+  };
+  return {
+    id: raw.id,
+    district: toStr(raw.district),
+    buildingName: toStr(raw.buildingName),
+    address: toStr(raw.address),
+    transactionDate: toStr(raw.transactionDate ?? raw.交易日期),
+    season: toStr(raw.season),
+    totalPrice: toNum(raw.totalPrice),
+    unitPrice: toNum(raw.unitPrice),
+    buildingArea: toNum(raw.buildingArea),
+  };
+}
+
 function App() {
   const [properties, setProperties] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -11,8 +45,19 @@ function App() {
     district: '',
     minPrice: '',
     maxPrice: '',
+    dateFrom: '',
+    dateTo: '',
+  });
+  const [appliedFilter, setAppliedFilter] = useState({
+    district: '',
+    minPrice: '',
+    maxPrice: '',
+    dateFrom: '',
+    dateTo: '',
   });
   const [viewMode, setViewMode] = useState('list');
+  const [filterOpen, setFilterOpen] = useState(true);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   useEffect(() => {
     fetchProperties();
@@ -23,11 +68,8 @@ function App() {
       setLoading(true);
       const colRef = collection(db, 'realEstate_preSale');
       const snapshot = await getDocs(colRef);
-      const data = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      data.sort((a, b) => (b.totalPrice || 0) - (a.totalPrice || 0));
+      const data = snapshot.docs.map(doc => normalizeDocData({ id: doc.id, ...doc.data() }));
+      data.sort((a, b) => (b.totalPrice ?? 0) - (a.totalPrice ?? 0));
       setProperties(data);
       setError(null);
     } catch (err) {
@@ -68,11 +110,23 @@ function App() {
   const seasonDisplay = seasons.length > 0 ? formatSeason(seasons[0]) : '';
 
   const filteredProperties = properties.filter(p => {
-    if (filter.district && p.district !== filter.district) return false;
-    if (filter.minPrice && p.totalPrice < parseInt(filter.minPrice) * 10000) return false;
-    if (filter.maxPrice && p.totalPrice > parseInt(filter.maxPrice) * 10000) return false;
+    if (appliedFilter.district && p.district !== appliedFilter.district) return false;
+    const minWan = appliedFilter.minPrice ? parseInt(appliedFilter.minPrice, 10) : null;
+    const maxWan = appliedFilter.maxPrice ? parseInt(appliedFilter.maxPrice, 10) : null;
+    if (minWan != null && !Number.isNaN(minWan) && (p.totalPrice == null || p.totalPrice < minWan * 10000)) return false;
+    if (maxWan != null && !Number.isNaN(maxWan) && (p.totalPrice == null || p.totalPrice > maxWan * 10000)) return false;
+    if (appliedFilter.dateFrom && p.transactionDate && p.transactionDate < appliedFilter.dateFrom) return false;
+    if (appliedFilter.dateTo && p.transactionDate && p.transactionDate > appliedFilter.dateTo) return false;
     return true;
   });
+
+  const onSearch = () => setAppliedFilter({ ...filter });
+
+  const clearFilter = () => {
+    const empty = { district: '', minPrice: '', maxPrice: '', dateFrom: '', dateTo: '' };
+    setFilter(empty);
+    setAppliedFilter(empty);
+  };
 
   return (
     <div className="app">
@@ -93,62 +147,105 @@ function App() {
 
       <main className="main">
         <div className="filter-section">
-          <div className="filter-card">
-            <div className="filter-header">
+          <div className={`filter-card ${filterOpen ? 'filter-card--open' : ''}`}>
+            <button
+              type="button"
+              className="filter-header filter-header--tappable"
+              onClick={() => setFilterOpen(prev => !prev)}
+              aria-expanded={filterOpen}
+            >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <polygon points="22,3 2,3 10,12.46 10,19 14,21 14,12.46" />
               </svg>
               <span>篩選條件</span>
-            </div>
+              <span className="filter-header-chevron" aria-hidden>
+                {filterOpen ? '▼' : '▶'}
+              </span>
+            </button>
             <div className="filter-controls">
-              <div className="filter-group">
-                <label>區域</label>
-                <select 
-                  value={filter.district} 
-                  onChange={e => setFilter({...filter, district: e.target.value})}
+              <div className="filter-controls-basic">
+                <div className="filter-group">
+                  <label>區域</label>
+                  <select 
+                    value={filter.district} 
+                    onChange={e => setFilter({...filter, district: e.target.value})}
+                  >
+                    <option value="">全部區域</option>
+                    {districts.map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="filter-group filter-group--date">
+                  <label>起始日期（交易日期）</label>
+                  <input
+                    type="date"
+                    value={filter.dateFrom}
+                    onChange={e => setFilter({...filter, dateFrom: e.target.value})}
+                  />
+                </div>
+                <div className="filter-group filter-group--date">
+                  <label>結束日期（交易日期）</label>
+                  <input
+                    type="date"
+                    value={filter.dateTo}
+                    onChange={e => setFilter({...filter, dateTo: e.target.value})}
+                  />
+                </div>
+                <div className="filter-group filter-group--search-btn">
+                  <label>&nbsp;</label>
+                  <button type="button" className="search-btn" onClick={onSearch} title="依交易日期搜尋">
+                    搜尋
+                  </button>
+                </div>
+              </div>
+
+              <div className="filter-actions-row">
+                <button
+                  type="button"
+                  className="filter-advanced-trigger"
+                  onClick={() => setAdvancedOpen(prev => !prev)}
+                  aria-expanded={advancedOpen}
                 >
-                  <option value="">全部區域</option>
-                  {districts.map(d => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
+                  <span>進階搜尋</span>
+                  <span className="filter-advanced-chevron">{advancedOpen ? '▲' : '▼'}</span>
+                </button>
+                <button type="button" className="clear-btn" onClick={clearFilter}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                  </svg>
+                  清除
+                </button>
               </div>
 
-              <div className="filter-group">
-                <label>最低價格</label>
-                <div className="input-with-unit">
-                  <input
-                    type="number"
-                    placeholder="0"
-                    value={filter.minPrice}
-                    onChange={e => setFilter({...filter, minPrice: e.target.value})}
-                  />
-                  <span>萬</span>
+              {advancedOpen && (
+                <div className="filter-controls-advanced">
+                  <div className="filter-group">
+                    <label>最低價格</label>
+                    <div className="input-with-unit">
+                      <input
+                        type="number"
+                        placeholder="0"
+                        value={filter.minPrice}
+                        onChange={e => setFilter({...filter, minPrice: e.target.value})}
+                      />
+                      <span>萬</span>
+                    </div>
+                  </div>
+                  <div className="filter-group">
+                    <label>最高價格</label>
+                    <div className="input-with-unit">
+                      <input
+                        type="number"
+                        placeholder="不限"
+                        value={filter.maxPrice}
+                        onChange={e => setFilter({...filter, maxPrice: e.target.value})}
+                      />
+                      <span>萬</span>
+                    </div>
+                  </div>
                 </div>
-              </div>
-
-              <div className="filter-group">
-                <label>最高價格</label>
-                <div className="input-with-unit">
-                  <input
-                    type="number"
-                    placeholder="不限"
-                    value={filter.maxPrice}
-                    onChange={e => setFilter({...filter, maxPrice: e.target.value})}
-                  />
-                  <span>萬</span>
-                </div>
-              </div>
-
-              <button 
-                className="clear-btn"
-                onClick={() => setFilter({ district: '', minPrice: '', maxPrice: '' })}
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
-                </svg>
-                清除
-              </button>
+              )}
             </div>
           </div>
         </div>
@@ -228,7 +325,7 @@ function App() {
               >
                 <div className="card-header">
                   <span className="district-tag">{p.district}</span>
-                  <span className="date-tag">{p.transactionDate}</span>
+                  <span className="date-tag">{p.transactionDate ? `交易日期 ${p.transactionDate}` : ''}</span>
                 </div>
                 <h3 className="building-name">{p.buildingName || '未提供建案名稱'}</h3>
                 <p className="address">
