@@ -58,6 +58,8 @@ function App() {
   const [viewMode, setViewMode] = useState('list');
   const [filterOpen, setFilterOpen] = useState(true);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const PAGE_SIZE = 20;
+  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
     fetchProperties();
@@ -120,24 +122,56 @@ function App() {
     return true;
   });
 
-  const onSearch = () => setAppliedFilter({ ...filter });
+  const onSearch = () => {
+    setAppliedFilter({ ...filter });
+    setCurrentPage(1);
+  };
 
   const clearFilter = () => {
     const empty = { district: '', minPrice: '', maxPrice: '', dateFrom: '', dateTo: '' };
     setFilter(empty);
     setAppliedFilter(empty);
+    setCurrentPage(1);
   };
+
+  const totalFiltered = filteredProperties.length;
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / PAGE_SIZE));
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const displayedProperties = filteredProperties.slice(pageStart, pageStart + PAGE_SIZE);
+
+  const goToPage = (page) => {
+    const p = Math.max(1, Math.min(page, totalPages));
+    setCurrentPage(p);
+  };
+
+  useEffect(() => {
+    const totalP = Math.max(1, Math.ceil(totalFiltered / PAGE_SIZE));
+    if (currentPage > totalP) setCurrentPage(1);
+  }, [totalFiltered, currentPage]);
 
   return (
     <div className="app">
       <header className="header">
         <div className="header-content">
-          <div className="header-icon">
+          <a
+            href="/"
+            className="header-icon"
+            onClick={(e) => {
+              e.preventDefault();
+              const url = window.location.pathname;
+              if (window.location.search) {
+                window.history.replaceState(null, '', url);
+              }
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            title="返回首頁"
+            aria-label="返回首頁"
+          >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
               <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
               <polyline points="9,22 9,12 15,12 15,22" />
             </svg>
-          </div>
+          </a>
           <div className="header-text">
             <h1>葉宗鑪的桃園市預售屋實價登錄</h1>
             <p>資料來源：內政部不動產交易實價查詢服務網</p>
@@ -211,9 +245,6 @@ function App() {
                   <span className="filter-advanced-chevron">{advancedOpen ? '▲' : '▼'}</span>
                 </button>
                 <button type="button" className="clear-btn" onClick={clearFilter}>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
-                  </svg>
                   清除
                 </button>
               </div>
@@ -316,8 +347,9 @@ function App() {
         )}
 
         {!loading && !error && filteredProperties.length > 0 && (
+          <>
           <div className={`properties-grid ${viewMode}`}>
-            {filteredProperties.map((p, index) => (
+            {displayedProperties.map((p, index) => (
               <article 
                 key={p.id} 
                 className="property-card"
@@ -352,6 +384,61 @@ function App() {
               </article>
             ))}
           </div>
+
+          <div className="pagination">
+            <button
+              type="button"
+              className="pagination-btn"
+              disabled={currentPage <= 1}
+              onClick={() => goToPage(currentPage - 1)}
+              aria-label="上一頁"
+            >
+              ‹ 上一頁
+            </button>
+            <div className="pagination-pages">
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter(p => {
+                  if (totalPages <= 7) return true;
+                  if (p === 1 || p === totalPages) return true;
+                  if (Math.abs(p - currentPage) <= 1) return true;
+                  return false;
+                })
+                .reduce((acc, p, i, arr) => {
+                  if (i > 0 && p - arr[i - 1] > 1) acc.push('…');
+                  acc.push(p);
+                  return acc;
+                }, [])
+                .map((item, i) =>
+                  item === '…' ? (
+                    <span key={`ellipsis-${i}`} className="pagination-ellipsis">…</span>
+                  ) : (
+                    <button
+                      key={item}
+                      type="button"
+                      className={`pagination-num ${item === currentPage ? 'active' : ''}`}
+                      onClick={() => goToPage(item)}
+                      aria-label={`第 ${item} 頁`}
+                      aria-current={item === currentPage ? 'page' : undefined}
+                    >
+                      {item}
+                    </button>
+                  )
+                )}
+            </div>
+            <button
+              type="button"
+              className="pagination-btn"
+              disabled={currentPage >= totalPages}
+              onClick={() => goToPage(currentPage + 1)}
+              aria-label="下一頁"
+            >
+              下一頁 ›
+            </button>
+            <span className="pagination-info">
+              第 {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, totalFiltered)} 筆，共 {totalFiltered} 筆
+            </span>
+          </div>
+          </>
         )}
       </main>
 
