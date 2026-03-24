@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \"import pandas; print\\(''pandas:'', pandas.__version__\\)\")",
+      "Bash(python3 -c \"import xlrd; print\\(''xlrd:'', xlrd.__version__\\)\")",
+      "Bash(pip3 install:*)",
+      "Bash(python3:*)",
+      "Bash(firebase --version)",
+      "Bash(firebase projects:list)",
+      "Bash(firebase firestore:databases:list --project taoyuan-dd167)",
+      "Bash(node -e \":*)",
+      "Bash(firebase firestore:indexes --project taoyuan-dd167)",
+      "Bash(npm list:*)",
+      "Bash(npm install:*)"
+    ]
+  }
+}
